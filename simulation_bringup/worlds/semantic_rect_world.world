@@ -1,0 +1,245 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <world name="semantic_rect_world">
+
+    <include>
+      <uri>model://sun</uri>
+    </include>
+
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <physics type="ode">
+      <real_time_update_rate>1000.0</real_time_update_rate>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+    </physics>
+
+    <!-- Floor -->
+    <model name="room_floor">
+      <static>true</static>
+      <link name="link">
+        <pose>0 0 0.001 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>10 10 0.02</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>10 10 0.02</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.85 0.85 0.85 1</ambient>
+            <diffuse>0.90 0.90 0.90 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Outer walls for 10x10 room -->
+    <model name="north_wall">
+      <static>true</static>
+      <link name="link">
+        <pose>0 5.0 0.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>10 0.2 1.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>10 0.2 1.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.75 1</ambient>
+            <diffuse>0.7 0.7 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="south_wall">
+      <static>true</static>
+      <link name="link">
+        <pose>0 -5.0 0.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>10 0.2 1.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>10 0.2 1.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.75 1</ambient>
+            <diffuse>0.7 0.7 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="east_wall">
+      <static>true</static>
+      <link name="link">
+        <pose>5.0 0 0.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 10 1.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 10 1.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.75 1</ambient>
+            <diffuse>0.7 0.7 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="west_wall">
+      <static>true</static>
+      <link name="link">
+        <pose>-5.0 0 0.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 10 1.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 10 1.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.75 1</ambient>
+            <diffuse>0.7 0.7 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Middle divider wall with doorway -->
+    <!-- Door opening kept around the center -->
+    <model name="divider_top">
+      <static>true</static>
+      <link name="link">
+        <pose>0 3.1 0.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 3.8 1.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 3.8 1.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.65 0.65 0.70 1</ambient>
+            <diffuse>0.65 0.65 0.70 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="divider_bottom">
+      <static>true</static>
+      <link name="link">
+        <pose>0 -3.1 0.75 0 0 0</pose>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 3.8 1.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 3.8 1.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.65 0.65 0.70 1</ambient>
+            <diffuse>0.65 0.65 0.70 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ========================= -->
+    <!-- ROOM 1: bed chair person dining table -->
+    <!-- Left side -->
+    <!-- ========================= -->
+
+    <include>
+      <uri>model://Bed</uri>
+      <name>bed_1</name>
+      <pose>-3.6 2.6 0.1 0 0 1.57</pose>
+    </include>
+
+    <include>
+      <uri>model://Chair</uri>
+      <name>chair_1</name>
+      <pose>-2.7 -1.8 0.1 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>model://person_standing</uri>
+      <name>person_1</name>
+      <pose>-1.9 1.6 0 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>model://Dining Table</uri>
+      <name>dining_table_1</name>
+      <pose>-3.0 0.0 0.0 0 0 0</pose>
+    </include>
+
+    <!-- ========================= -->
+    <!-- ROOM 2: car bicycle -->
+    <!-- Right side -->
+    <!-- ========================= -->
+
+    <include>
+      <uri>model://prius_hybrid</uri>
+      <name>car_1</name>
+      <pose>2.8 -1.4 0.1 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>model://bicycle</uri>
+      <name>bicycle_1</name>
+      <pose>2.4 2.1 0.1 0 0 0</pose>
+    </include>
+
+  </world>
+</sdf>
