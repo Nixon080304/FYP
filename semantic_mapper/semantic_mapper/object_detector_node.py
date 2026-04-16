@@ -16,34 +16,58 @@ class ObjectDetectorNode(Node):
     def __init__(self) -> None:
         super().__init__('object_detector')
 
+        self.declare_parameter('model_path', 'yolov8n.pt')
+        self.declare_parameter('image_topic', '/camera/camera/image_raw')
+        self.declare_parameter('detection_topic', '/yolo/detections')
+        self.declare_parameter('annotated_image_topic', '/yolo/annotated_image')
+        self.declare_parameter('conf_threshold', 0.40)
+        self.declare_parameter('table_conf_threshold', 0.15)
+        self.declare_parameter('image_size', 960)
+
         self.bridge = CvBridge()
-        self.model = YOLO('yolov8n.pt')
-        self.conf_threshold = 0.5
+        self.model_path = str(self.get_parameter('model_path').value)
+        self.image_topic = str(self.get_parameter('image_topic').value)
+        self.detection_topic = str(self.get_parameter('detection_topic').value)
+        self.annotated_image_topic = str(self.get_parameter('annotated_image_topic').value)
+        self.conf_threshold = float(self.get_parameter('conf_threshold').value)
+        self.table_conf_threshold = float(self.get_parameter('table_conf_threshold').value)
+        self.image_size = int(self.get_parameter('image_size').value)
+
+        self.model = YOLO(self.model_path)
+
+        self.class_aliases = {
+            'table': 'dining table',
+            'dining_table': 'dining table',
+        }
 
         self.image_sub = self.create_subscription(
             Image,
-            '/camera/camera/image_raw',
+            self.image_topic,
             self.image_callback,
             10
         )
 
         self.detection_pub = self.create_publisher(
             Detection2DArray,
-            '/yolo/detections',
+            self.detection_topic,
             10
         )
 
         self.annotated_image_pub = self.create_publisher(
             Image,
-            '/yolo/annotated_image',
+            self.annotated_image_topic,
             10
         )
 
         self.last_labels: List[str] = []
         self.get_logger().info('Object detector node started.')
-        self.get_logger().info('Subscribed to: /camera/image_raw')
-        self.get_logger().info('Publishing detections to: /yolo/detections')
-        self.get_logger().info('Publishing annotated image to: /yolo/annotated_image')
+        self.get_logger().info(f'Model: {self.model_path}')
+        self.get_logger().info(f'Confidence threshold: {self.conf_threshold:.2f}')
+        self.get_logger().info(f'Table confidence threshold: {self.table_conf_threshold:.2f}')
+        self.get_logger().info(f'Inference image size: {self.image_size}')
+        self.get_logger().info(f'Subscribed to: {self.image_topic}')
+        self.get_logger().info(f'Publishing detections to: {self.detection_topic}')
+        self.get_logger().info(f'Publishing annotated image to: {self.annotated_image_topic}')
 
     def image_callback(self, msg: Image) -> None:
         try:
@@ -53,7 +77,12 @@ class ObjectDetectorNode(Node):
             return
 
         try:
-            results = self.model(frame, verbose=False)
+            results = self.model(
+                frame,
+                verbose=False,
+                imgsz=self.image_size,
+                conf=min(self.conf_threshold, self.table_conf_threshold)
+            )
         except Exception as e:
             self.get_logger().error(f'YOLO inference failed: {e}')
             return
@@ -79,10 +108,11 @@ class ObjectDetectorNode(Node):
             cls_id = int(box.cls[0].item())
             conf = float(box.conf[0].item())
 
-            if conf < self.conf_threshold:
-                continue
+            raw_label = str(names[cls_id])
+            label = self.normalize_label(raw_label)
 
-            label = names[cls_id]
+            if conf < self.class_conf_threshold(label):
+                continue
 
             xyxy = box.xyxy[0].tolist()
             x_min, y_min, x_max, y_max = xyxy
@@ -141,6 +171,15 @@ class ObjectDetectorNode(Node):
         if detected_labels != self.last_labels and detected_labels:
             self.last_labels = detected_labels
             self.get_logger().info(f'Detected: {", ".join(detected_labels)}')
+
+    def normalize_label(self, label: str) -> str:
+        normalized = label.strip().lower()
+        return self.class_aliases.get(normalized, normalized)
+
+    def class_conf_threshold(self, label: str) -> float:
+        if label == 'dining table':
+            return self.table_conf_threshold
+        return self.conf_threshold
 
 
 def main(args=None) -> None:

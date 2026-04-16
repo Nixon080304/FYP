@@ -26,7 +26,8 @@ class SemanticProjectionNode(Node):
         self.declare_parameter('camera_info_topic', '/camera/camera/camera_info')
         self.declare_parameter('output_frame', 'map')
         self.declare_parameter('ground_z', 0.0)
-        self.declare_parameter('min_confidence', 0.8)
+        self.declare_parameter('min_confidence', 0.55)
+        self.declare_parameter('table_min_confidence', 0.20)
         self.declare_parameter('bbox_bottom_fraction', 0.95)
         self.declare_parameter('marker_lifetime', 0.5)
         self.declare_parameter('debug', True)
@@ -36,6 +37,7 @@ class SemanticProjectionNode(Node):
         self.output_frame = self.get_parameter('output_frame').value
         self.ground_z = float(self.get_parameter('ground_z').value)
         self.min_confidence = float(self.get_parameter('min_confidence').value)
+        self.table_min_confidence = float(self.get_parameter('table_min_confidence').value)
         self.bbox_bottom_fraction = float(self.get_parameter('bbox_bottom_fraction').value)
         self.marker_lifetime = float(self.get_parameter('marker_lifetime').value)
         self.debug = bool(self.get_parameter('debug').value)
@@ -47,7 +49,10 @@ class SemanticProjectionNode(Node):
             'bed',
             'chair',
             'dining table'
-            'dining_table'
+        }
+        self.class_aliases = {
+            'table': 'dining table',
+            'dining_table': 'dining table',
         }
 
         # Camera intrinsics
@@ -91,6 +96,7 @@ class SemanticProjectionNode(Node):
         self.get_logger().info(f'Output frame: {self.output_frame}')
         self.get_logger().info(f'Allowed classes: {sorted(self.allowed_classes)}')
         self.get_logger().info(f'Min confidence: {self.min_confidence:.2f}')
+        self.get_logger().info(f'Table min confidence: {self.table_min_confidence:.2f}')
 
     def camera_info_callback(self, msg: CameraInfo):
         self.fx = msg.k[0]
@@ -116,16 +122,17 @@ class SemanticProjectionNode(Node):
             self.get_logger().warn('Camera frame_id is empty.', throttle_duration_sec=2.0)
             return
 
-        current_time = self.get_clock().now().to_msg()
+        detection_stamp = msg.header.stamp
+        detection_time = Time.from_msg(detection_stamp)
 
         marker_array = MarkerArray()
         pose_array = PoseArray()
         projected_array = ProjectedSemanticObjectArray()
 
-        pose_array.header.stamp = current_time
+        pose_array.header.stamp = detection_stamp
         pose_array.header.frame_id = self.output_frame
 
-        projected_array.header.stamp = current_time
+        projected_array.header.stamp = detection_stamp
         projected_array.header.frame_id = self.output_frame
 
         delete_all = Marker()
@@ -157,7 +164,7 @@ class SemanticProjectionNode(Node):
                 )
                 continue
 
-            class_name = class_id.lower().strip()
+            class_name = self.normalize_class_name(class_id)
 
             if class_name not in self.allowed_classes:
                 if self.debug:
@@ -167,10 +174,12 @@ class SemanticProjectionNode(Node):
                     )
                 continue
 
-            if score < self.min_confidence:
+            class_min_confidence = self.class_min_confidence(class_name)
+
+            if score < class_min_confidence:
                 if self.debug:
                     self.get_logger().warn(
-                        f'Skipping detection: score {score:.2f} below threshold {self.min_confidence:.2f}',
+                        f'Skipping detection: score {score:.2f} below threshold {class_min_confidence:.2f}',
                         throttle_duration_sec=1.0
                     )
                 continue
@@ -204,7 +213,8 @@ class SemanticProjectionNode(Node):
             point_world = self.project_pixel_to_ground(
                 u=u,
                 v=v,
-                source_frame=self.camera_frame
+                source_frame=self.camera_frame,
+                source_time=detection_time
             )
 
             if point_world is None:
@@ -227,12 +237,12 @@ class SemanticProjectionNode(Node):
             projected_obj.class_name = class_name
             projected_obj.confidence = float(score)
             projected_obj.pose = pose
-            projected_obj.stamp = current_time
+            projected_obj.stamp = detection_stamp
             projected_array.objects.append(projected_obj)
 
             sphere = Marker()
             sphere.header.frame_id = self.output_frame
-            sphere.header.stamp = current_time
+            sphere.header.stamp = detection_stamp
             sphere.ns = 'semantic_objects'
             sphere.id = marker_id
             sphere.type = Marker.SPHERE
@@ -255,7 +265,7 @@ class SemanticProjectionNode(Node):
 
             text = Marker()
             text.header.frame_id = self.output_frame
-            text.header.stamp = current_time
+            text.header.stamp = detection_stamp
             text.ns = 'semantic_labels'
             text.id = marker_id
             text.type = Marker.TEXT_VIEW_FACING
@@ -283,7 +293,13 @@ class SemanticProjectionNode(Node):
         self.marker_pub.publish(marker_array)
         self.projected_pub.publish(projected_array)
 
-    def project_pixel_to_ground(self, u: float, v: float, source_frame: str):
+    def project_pixel_to_ground(
+        self,
+        u: float,
+        v: float,
+        source_frame: str,
+        source_time: Time
+    ):
         # Pixel -> ray in camera frame
         x_cam = (u - self.cx) / self.fx
         y_cam = (v - self.cy) / self.fy
@@ -294,7 +310,7 @@ class SemanticProjectionNode(Node):
             tf = self.tf_buffer.lookup_transform(
                 self.output_frame,
                 source_frame,
-                Time(),
+                source_time,
                 timeout=Duration(seconds=1.0)
             )
         except Exception as e:
@@ -376,6 +392,15 @@ class SemanticProjectionNode(Node):
             return None, None
 
         return best_class, best_score
+
+    def normalize_class_name(self, class_id: str) -> str:
+        normalized = class_id.lower().strip()
+        return self.class_aliases.get(normalized, normalized)
+
+    def class_min_confidence(self, class_name: str) -> float:
+        if class_name == 'dining table':
+            return self.table_min_confidence
+        return self.min_confidence
 
     def quaternion_to_rotation_matrix(self, x, y, z, w):
         xx = x * x

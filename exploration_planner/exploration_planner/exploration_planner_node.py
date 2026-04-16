@@ -114,6 +114,9 @@ class ExplorationPlannerNode(Node):
         self.failed_goal_radius = 0.60
         self.max_failed_goals = 50
 
+        self.min_frontier_free_neighbors = 1
+        self.repeat_goal_radius = 1.0
+
         self.no_frontier_counter = 0
         self.no_frontier_limit = 30
 
@@ -240,19 +243,8 @@ class ExplorationPlannerNode(Node):
             scale=0.08
         )
 
-        if selected_goal_map is not None and self.previous_selected_goal is not None:
-            repeat_dist = hypot(
-                selected_goal_map[0] - self.previous_selected_goal[0],
-                selected_goal_map[1] - self.previous_selected_goal[1]
-            )
-            if repeat_dist < 3.0:
-                self.goal_repeat_count += 1
-            else:
-                self.goal_repeat_count = 0
-        else:
-            self.goal_repeat_count = 0
-
-        self.previous_selected_goal = selected_goal_map
+        if not self.goal_in_progress:
+            self.update_repeat_goal_state(msg, selected_goal_map)
 
         should_try_recovery = (
             self.recovery_enabled and
@@ -570,8 +562,16 @@ class ExplorationPlannerNode(Node):
                 if data[idx] < 0 or data[idx] >= self.occupied_threshold:
                     continue
 
-                if self.has_unknown_neighbor(x, y, width, height, data):
-                    frontiers.append((x, y))
+                if not self.has_unknown_neighbor(x, y, width, height, data):
+                    continue
+
+                if self.count_free_neighbors(x, y, width, height, data) < self.min_frontier_free_neighbors:
+                    continue
+
+                if self.is_boundary_cell(x, y, width, height):
+                    continue
+
+                frontiers.append((x, y))
 
         return frontiers
 
@@ -596,6 +596,63 @@ class ExplorationPlannerNode(Node):
                     return True
 
         return False
+
+    def count_free_neighbors(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        data: List[int]
+    ) -> int:
+        count = 0
+
+        for ny in range(y - 1, y + 2):
+            for nx in range(x - 1, x + 2):
+                if nx == x and ny == y:
+                    continue
+
+                if nx < 0 or ny < 0 or nx >= width or ny >= height:
+                    continue
+
+                value = data[self.to_index(nx, ny, width)]
+                if 0 <= value < self.occupied_threshold:
+                    count += 1
+
+        return count
+
+    def is_boundary_cell(self, x: int, y: int, width: int, height: int) -> bool:
+        return x == 0 or y == 0 or x == width - 1 or y == height - 1
+
+    def update_repeat_goal_state(
+        self,
+        occ_grid: OccupancyGrid,
+        selected_goal_map: Optional[Tuple[float, float]]
+    ) -> None:
+        if selected_goal_map is None:
+            self.goal_repeat_count = 0
+            self.previous_selected_goal = None
+            return
+
+        goal_world = self.map_to_world(
+            occ_grid,
+            selected_goal_map[0],
+            selected_goal_map[1]
+        )
+
+        if self.previous_selected_goal is not None:
+            repeat_dist = hypot(
+                goal_world[0] - self.previous_selected_goal[0],
+                goal_world[1] - self.previous_selected_goal[1]
+            )
+            if repeat_dist < self.repeat_goal_radius:
+                self.goal_repeat_count += 1
+            else:
+                self.goal_repeat_count = 0
+        else:
+            self.goal_repeat_count = 0
+
+        self.previous_selected_goal = goal_world
 
     def cluster_frontiers(self, frontier_cells: List[GridCell]) -> List[Cluster]:
         frontier_set: Set[GridCell] = set(frontier_cells)
