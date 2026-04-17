@@ -27,7 +27,7 @@ class SemanticProjectionNode(Node):
         self.declare_parameter('output_frame', 'map')
         self.declare_parameter('ground_z', 0.0)
         self.declare_parameter('min_confidence', 0.55)
-        self.declare_parameter('table_min_confidence', 0.20)
+        self.declare_parameter('table_min_confidence', 0.15)
         self.declare_parameter('bbox_bottom_fraction', 0.95)
         self.declare_parameter('marker_lifetime', 0.5)
         self.declare_parameter('debug', True)

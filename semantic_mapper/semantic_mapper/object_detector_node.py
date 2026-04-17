@@ -23,6 +23,10 @@ class ObjectDetectorNode(Node):
         self.declare_parameter('conf_threshold', 0.40)
         self.declare_parameter('table_conf_threshold', 0.15)
         self.declare_parameter('image_size', 960)
+        self.declare_parameter('table_recovery_enabled', True)
+        self.declare_parameter('table_recovery_conf_threshold', 0.08)
+        self.declare_parameter('table_recovery_image_size', 1280)
+        self.declare_parameter('table_recovery_augment', True)
 
         self.bridge = CvBridge()
         self.model_path = str(self.get_parameter('model_path').value)
@@ -32,6 +36,14 @@ class ObjectDetectorNode(Node):
         self.conf_threshold = float(self.get_parameter('conf_threshold').value)
         self.table_conf_threshold = float(self.get_parameter('table_conf_threshold').value)
         self.image_size = int(self.get_parameter('image_size').value)
+        self.table_recovery_enabled = bool(self.get_parameter('table_recovery_enabled').value)
+        self.table_recovery_conf_threshold = float(
+            self.get_parameter('table_recovery_conf_threshold').value
+        )
+        self.table_recovery_image_size = int(
+            self.get_parameter('table_recovery_image_size').value
+        )
+        self.table_recovery_augment = bool(self.get_parameter('table_recovery_augment').value)
 
         self.model = YOLO(self.model_path)
 
@@ -65,6 +77,12 @@ class ObjectDetectorNode(Node):
         self.get_logger().info(f'Confidence threshold: {self.conf_threshold:.2f}')
         self.get_logger().info(f'Table confidence threshold: {self.table_conf_threshold:.2f}')
         self.get_logger().info(f'Inference image size: {self.image_size}')
+        self.get_logger().info(
+            f'Table recovery: enabled={self.table_recovery_enabled} '
+            f'conf={self.table_recovery_conf_threshold:.2f} '
+            f'imgsz={self.table_recovery_image_size} '
+            f'augment={self.table_recovery_augment}'
+        )
         self.get_logger().info(f'Subscribed to: {self.image_topic}')
         self.get_logger().info(f'Publishing detections to: {self.detection_topic}')
         self.get_logger().info(f'Publishing annotated image to: {self.annotated_image_topic}')
@@ -91,8 +109,10 @@ class ObjectDetectorNode(Node):
             return
 
         result = results[0]
-        names = result.names
-        boxes = result.boxes
+        detections = self.collect_detections(result.boxes, result.names)
+
+        if not self.has_label(detections, 'dining table'):
+            detections.extend(self.recover_table_detections(frame))
 
         detection_array = Detection2DArray()
         detection_array.header = msg.header
@@ -100,22 +120,14 @@ class ObjectDetectorNode(Node):
         annotated_frame = frame.copy()
         detected_labels = []
 
-        if boxes is None:
+        if not detections:
             self.detection_pub.publish(detection_array)
             return
 
-        for box in boxes:
-            cls_id = int(box.cls[0].item())
-            conf = float(box.conf[0].item())
-
-            raw_label = str(names[cls_id])
-            label = self.normalize_label(raw_label)
-
-            if conf < self.class_conf_threshold(label):
-                continue
-
-            xyxy = box.xyxy[0].tolist()
-            x_min, y_min, x_max, y_max = xyxy
+        for detection in detections:
+            label = detection['label']
+            conf = detection['confidence']
+            x_min, y_min, x_max, y_max = detection['xyxy']
 
             width = x_max - x_min
             height = y_max - y_min
@@ -180,6 +192,70 @@ class ObjectDetectorNode(Node):
         if label == 'dining table':
             return self.table_conf_threshold
         return self.conf_threshold
+
+    def collect_detections(self, boxes, names, only_label: str | None = None) -> List[dict]:
+        detections: List[dict] = []
+
+        if boxes is None:
+            return detections
+
+        for box in boxes:
+            cls_id = int(box.cls[0].item())
+            conf = float(box.conf[0].item())
+
+            raw_label = str(names[cls_id])
+            label = self.normalize_label(raw_label)
+
+            if only_label is not None and label != only_label:
+                continue
+
+            if conf < self.class_conf_threshold(label):
+                continue
+
+            detections.append({
+                'label': label,
+                'confidence': conf,
+                'xyxy': box.xyxy[0].tolist(),
+            })
+
+        return detections
+
+    def has_label(self, detections: List[dict], label: str) -> bool:
+        return any(detection['label'] == label for detection in detections)
+
+    def recover_table_detections(self, frame) -> List[dict]:
+        if not self.table_recovery_enabled:
+            return []
+
+        try:
+            results = self.model(
+                frame,
+                verbose=False,
+                imgsz=self.table_recovery_image_size,
+                conf=min(self.table_recovery_conf_threshold, self.table_conf_threshold),
+                augment=self.table_recovery_augment
+            )
+        except Exception as e:
+            self.get_logger().error(f'Table recovery inference failed: {e}')
+            return []
+
+        if not results:
+            return []
+
+        detections = self.collect_detections(
+            results[0].boxes,
+            results[0].names,
+            only_label='dining table'
+        )
+
+        if detections:
+            strongest = max(detection['confidence'] for detection in detections)
+            self.get_logger().info(
+                f'Recovered dining table detection(s): {len(detections)} | '
+                f'best_conf={strongest:.2f}'
+            )
+
+        return detections
 
 
 def main(args=None) -> None:
